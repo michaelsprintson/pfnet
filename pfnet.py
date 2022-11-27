@@ -518,7 +518,7 @@ class PFNet(object):
         optimizer = tf.compat.v1.train.RMSPropOptimizer(self.learning_rate_op, decay=0.9)
         # optimizer = tf.keras.optimizers.RMSprop(self.learning_rate_op, rho=0.9) #can't do this because of the tape thing
 
-        with tf.compat.v1.control_dependencies(tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)):
+        with tf.compat.v1.control_dependencies(tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)): #dont need this
             self.train_op = optimizer.minimize(self.train_loss_op, global_step=None, var_list=tf.compat.v1.trainable_variables())
             # self.train_op = optimizer.minimize(loss = self.train_loss_op, var_list=tf.compat.v1.trainable_variables(), tape=tf.GradientTape())
 
