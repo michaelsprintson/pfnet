@@ -111,7 +111,7 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
     def transition_model(self, particle_states):
         pos_std = self.params['transition_std'][0] # position std
         vel_std = self.params['transition_std'][1]  # velocity std
-        acc_std = self.params['transition_std'][1]  # acceleration std
+        acc_std = self.params['transition_std'][2]  # acceleration std
 
         part_y, part_v, part_a = tf.unstack(particle_states, axis=-1, num=3)
 
@@ -132,8 +132,9 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
         p_flatten = tf.keras.layers.Flatten()(particle_states)
         x = tf.keras.layers.Concatenate()((p_flatten, observation, prev_window))
         x = tf.keras.layers.Dense(self.params['num_particles'], "relu", input_shape=x.shape)(x)
-        x = tf.keras.layers.Dense(self.params['num_particles'] * 2, "relu", input_shape=x.shape)(x)
-        x = tf.keras.layers.Dense(self.params['num_particles'], "relu", input_shape=x.shape)(x)
+        # x = tf.keras.layers.Dense(self.params['num_particles'] * 2, "relu", input_shape=x.shape)(x)
+        # x = tf.keras.layers.Dense(self.params['num_particles'], "relu", input_shape=x.shape)(x)
+        print(x.shape)
         return x
         #plan
         # add previous window num points, 0 padded if dont exist
@@ -176,8 +177,7 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
 
         # sample particle indices according to q(s)
         # indices = tf.cast(tf.compat.v1.multinomial(q_weights, num_particles), tf.int32)  # shape: (batch_size, num_particles)
-        indices = tf.cast(tfp.distributions.Multinomial(100, logits=q_weights).sample(()), tf.int32)  # shape: (batch_size, num_particles)
-        # print(indices.shape)
+        indices = tf.cast(tfp.distributions.Multinomial(num_particles, logits=q_weights).sample(()), tf.int32)  # shape: (batch_size, num_particles)
 
         # index into particles
         helper = tf.range(0, batch_size*num_particles, delta=num_particles, dtype=tf.int32)  # (batch, )
@@ -243,7 +243,7 @@ class PFNET(object):
         
         rnn = tf.keras.layers.RNN(cell = cell_func, time_major=False, return_sequences=True, return_state=True)
         (particle_states, particle_weights), states_out, weights = rnn(inputs = (obs_in,prev_window), initial_state = state)
-        self.print_state_op = particle_states
+        self.print_state_op = (particle_states, particle_weights)
         state = [states_out,weights]
 
         with tf.control_dependencies([particle_states, particle_weights]):
