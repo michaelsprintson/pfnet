@@ -204,8 +204,9 @@ class PFNET(object):
         self.train_op = None
         self.update_state_op = tf.constant(0)
 
-        p_states, p_weights = self.build_rnn(input_shapes)
+        self.outputs = self.build_rnn(input_shapes)
 
+        p_states, p_weights = self.outputs
         self.build_loss_op(p_states, p_weights, true_state_shape = labels_shapes)
 
         if is_training:
@@ -219,7 +220,8 @@ class PFNET(object):
         init_particle_states = tf.keras.Input(dtype = tf.float32, shape = init_particle_state_shape[1:], batch_size= init_particle_state_shape[0], name = "initial_state")
         init_particle_weights = tf.keras.Input(dtype = tf.float32, shape = init_particle_state_shape[1:-1], batch_size= init_particle_state_shape[0], name = "initial_weight")
         prev_window = tf.keras.Input(dtype = tf.float32, shape = prev_window_shape[1:], batch_size= prev_window_shape[0], name = "prev_window")
-
+        self.inputs = [obs_in, init_particle_states, init_particle_weights, prev_window]
+        
         num_particles = init_particle_states.shape.as_list()[1]
 
         # init_particle_weights = tf.constant(np.log(1.0/float(num_particles)),
@@ -252,7 +254,9 @@ class PFNET(object):
     def build_loss_op(self, p_states, p_weights, true_state_shape):
         lin_weights = tf.nn.softmax(p_weights, axis=-1)
 
-        true_pos = tf.keras.Input(dtype = tf.float32, shape = true_state_shape[1:], batch_size= true_state_shape[0], name = "y")[:, :, :1]
+        true_pos = tf.keras.Input(dtype = tf.float32, shape = true_state_shape[1:], batch_size= true_state_shape[0], name = "y")
+        self.inputs.append(true_pos)
+
         mean_pos = tf.reduce_sum(tf.multiply(p_states[:,:,:,:1], lin_weights[:,:,:,None]), axis = 2)
         pos_diffs = true_pos - mean_pos
         
