@@ -242,8 +242,9 @@ class PFNET(object):
                                 num_particles=num_particles)
         
         rnn = tf.keras.layers.RNN(cell = cell_func, time_major=False, return_sequences=True, return_state=True)
-        (particle_states, particle_weights), states, weights = rnn(inputs = (obs_in,prev_window), initial_state = state)
-        state = [states,weights]
+        (particle_states, particle_weights), states_out, weights = rnn(inputs = (obs_in,prev_window), initial_state = state)
+        self.print_state_op = particle_states
+        state = [states_out,weights]
 
         with tf.control_dependencies([particle_states, particle_weights]):
             self.update_state_op = tf.group(
