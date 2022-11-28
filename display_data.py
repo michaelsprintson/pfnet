@@ -25,6 +25,7 @@ def display_data(file):
     for data_i, string_record in enumerate(gen):
         result = tf.train.Example.FromString(string_record)
         features = result.features.feature
+        return features
 
         # maps are np.uint8 arrays. each has a different size.
 

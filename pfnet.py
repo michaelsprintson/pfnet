@@ -554,6 +554,9 @@ class PFNet(object):
         state = tf.cond(is_first_step,
                         true_fn=lambda: (init_particle_states, init_particle_weights),
                         false_fn=lambda: tuple(self.hidden_states))
+        
+        print(state[0].shape)
+        print(state[1].shape)
 
         
         # hack to create variables on GPU
