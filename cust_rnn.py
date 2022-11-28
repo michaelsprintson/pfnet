@@ -127,21 +127,31 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
     
     def observation_model(self, particle_states, observation, prev_window):
 
-        # print("in obs model")
+        # print(particle_states.shape) #(?, ??, 3)
+        # print(observation.shape) #(?, 1)
+        # print(prev_window.shape) #(?, 5)
 
-        p_flatten = tf.keras.layers.Flatten()(particle_states)
-        x = tf.keras.layers.Concatenate()((p_flatten, observation, prev_window))
-        x = tf.keras.layers.Dense(self.params['num_particles'], "relu", input_shape=x.shape)(x)
-        # x = tf.keras.layers.Dense(self.params['num_particles'] * 2, "relu", input_shape=x.shape)(x)
-        # x = tf.keras.layers.Dense(self.params['num_particles'], "relu", input_shape=x.shape)(x)
-        print(x.shape)
-        return x
-        #plan
-        # add previous window num points, 0 padded if dont exist
-        # append particle states with obsv with previous window points
-        # locallyconnected and dense and relu it 
-        
-        
+        #tile encodings
+        x = tf.keras.layers.Concatenate()((observation, prev_window))
+        enc_tile = tf.tile(tf.expand_dims(x, 1), [1,  particle_states.shape[1], 1]) # (?, ??, 6)
+        #concatenate encoding to particles
+        inp = tf.keras.layers.Concatenate()((particle_states, enc_tile)) # (?, ??, 9)
+        #batch apply obs est to input
+        obs_est = tf.keras.Sequential(layers=[
+            tf.keras.layers.Dense(128, activation=None, input_shape = [inp.shape[-1],]),
+            tf.keras.layers.ReLU(),
+            tf.keras.layers.Dense(128, activation=None),
+            tf.keras.layers.ReLU(),
+            tf.keras.layers.Dense(1, activation=None),
+            tf.keras.layers.Activation("sigmoid"),
+        ], name = "obs_like_est")  
+
+        inp_flatten = tf.reshape(inp, (-1, inp.shape[-1])) #(?*??, 9)
+        inp_flatten = tf.expand_dims(inp_flatten, 1) #(?*??, 1, 9)
+        inp_op = tf.map_fn(obs_est, inp_flatten)[:,0,:] #(?*??, 1)
+        inp_op = tf.scan(lambda a, x: x * (1 - 0.004) + 0.004 + a*0, inp_op) #(?*??, 1)
+        inp_reshape = tf.reshape(inp_op, (inp.shape[0], inp.shape[1])) #(?, ??)
+        return inp_reshape
 
     @staticmethod
     def resample(particle_states, particle_weights, alpha):
