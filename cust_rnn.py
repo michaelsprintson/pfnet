@@ -254,7 +254,7 @@ class PFNET(object):
         rnn = tf.keras.layers.RNN(cell = cell_func, time_major=False, return_sequences=True, return_state=True)
         (particle_states, particle_weights), states_out, weights = rnn(inputs = (obs_in,prev_window), initial_state = state)
         # self.print_state_op = (particle_states, particle_weights)
-        self.print_state_op = (particle_states, states_out)
+        self.print_state_op = (particle_states, particle_weights)
         state = [states_out,weights]
 
         with tf.control_dependencies([particle_states, particle_weights]):
