@@ -95,12 +95,13 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
         observation, prev_window = inputs #can be additional inputs, passed in like odometry?
 
         lik = self.observation_model(particle_states, observation, prev_window) # additional inputs can be passed in here
-        particle_weights += lik  # unnormalized
+        # particle_weights_o = particle_weights + lik  # unnormalized
+        # particle_weights += lik  # unnormalized
+        outputs = particle_states, lik
         
         particle_states, particle_weights = self.resample(
-                particle_states, particle_weights, alpha=self.params['alpha_resample_ratio'])
+                particle_states, lik, alpha=self.params['alpha_resample_ratio'])
         
-        outputs = particle_states, particle_weights
 
         particle_states = self.transition_model(particle_states) # or here
 
@@ -132,21 +133,29 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
         # print(prev_window.shape) #(?, 5)
 
         #tile encodings
-        x = tf.keras.layers.Concatenate()((observation, prev_window))
-        enc_tile = tf.tile(tf.expand_dims(x, 1), [1,  particle_states.shape[1], 1]) # (?, ??, 6)
+
+        # x = tf.keras.layers.Concatenate()((observation, prev_window))
+        # enc_tile = tf.tile(tf.expand_dims(x, 1), [1,  particle_states.shape[1], 1]) # (?, ??, 6)
+
+        enc_tile = tf.tile(tf.expand_dims(observation, 1), [1,  particle_states.shape[1], 1]) # (?, ??, 6)
+
         #concatenate encoding to particles
-        inp = tf.keras.layers.Concatenate()((particle_states, enc_tile)) # (?, ??, 9)
-        #batch apply obs est to input
+        part_y, part_v, part_a = tf.unstack(particle_states, axis=-1, num=3)
+        p_move = part_y + (part_v * self.params['time_step']) + (0.5 * part_a * self.params['time_step']**2)
+
+        inp = tf.keras.layers.Concatenate()((tf.expand_dims(p_move,2), enc_tile)) # (?, ??, 9)
+                #batch apply obs est to input
         obs_est = tf.keras.Sequential(layers=[
-            tf.keras.layers.Dense(128, activation=None, input_shape = [inp.shape[-1],]),
-            tf.keras.layers.ReLU(),
-            tf.keras.layers.Dense(128, activation=None),
+            tf.keras.layers.Dense(3, activation=None, input_shape = [inp.shape[-1],]),
+            # tf.keras.layers.ReLU(),
+            # tf.keras.layers.Dense(128, activation=None),
             tf.keras.layers.ReLU(),
             tf.keras.layers.Dense(1, activation=None),
             tf.keras.layers.Activation("sigmoid"),
         ], name = "obs_like_est")  
 
-        inp_flatten = tf.reshape(inp, (-1, inp.shape[-1])) #(?*??, 9)
+        # ? = batch, ?? = particle_num
+        inp_flatten = tf.reshape(inp, (-1, inp.shape[-1])) #(?*??, 9) 
         inp_flatten = tf.expand_dims(inp_flatten, 1) #(?*??, 1, 9)
         inp_op = tf.map_fn(obs_est, inp_flatten)[:,0,:] #(?*??, 1)
         inp_op = tf.scan(lambda a, x: x * (1 - 0.004) + 0.004 + a*0, inp_op) #(?*??, 1)
@@ -186,8 +195,8 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
             particle_weights = uniform_weights
 
         # sample particle indices according to q(s)
-        # indices = tf.cast(tf.compat.v1.multinomial(q_weights, num_particles), tf.int32)  # shape: (batch_size, num_particles)
-        indices = tf.cast(tfp.distributions.Multinomial(num_particles, logits=q_weights).sample(()), tf.int32)  # shape: (batch_size, num_particles)
+        indices = tf.cast(tf.compat.v1.multinomial(q_weights, num_particles), tf.int32)  # shape: (batch_size, num_particles)
+        # indices = tf.cast(tfp.distributions.Multinomial(num_particles, logits=q_weights).sample(()), tf.int32)  # shape: (batch_size, num_particles)
 
         # index into particles
         helper = tf.range(0, batch_size*num_particles, delta=num_particles, dtype=tf.int32)  # (batch, )
@@ -198,6 +207,7 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
 
         particle_weights = tf.reshape(particle_weights, (batch_size * num_particles, ))
         particle_weights = tf.gather(particle_weights, indices=indices, axis=0)  # (batch_size, num_particles,)
+        # particle_weights = tf.fill((batch_size,num_particles,), np.float32(np.log(1.0/float(100))))
 
         return particle_states, particle_weights
     
@@ -214,19 +224,21 @@ class PFNET(object):
         self.train_op = None
         self.update_state_op = tf.constant(0)
 
-        self.outputs = self.build_rnn(input_shapes)
+        obs_in = tf.keras.Input(dtype = tf.float32, shape = input_shapes[1][1:], batch_size= input_shapes[1][0], name = "X")
+        self.outputs = self.build_rnn(input_shapes, obs_in)
 
         p_states, p_weights = self.outputs
-        self.build_loss_op(p_states, p_weights, true_state_shape = labels_shapes)
+
+
+        self.build_loss_op(p_states, p_weights, obs_in)
 
         if is_training:
             self.build_train_op()
     
-    def build_rnn(self, input_shapes):
+    def build_rnn(self, input_shapes, obs_in):
         init_particle_state_shape, observation_shape, prev_window_shape = input_shapes
         batch_size = observation_shape[0]
         
-        obs_in = tf.keras.Input(dtype = tf.float32, shape = observation_shape[1:], batch_size= observation_shape[0], name = "X")
         init_particle_states = tf.keras.Input(dtype = tf.float32, shape = init_particle_state_shape[1:], batch_size= init_particle_state_shape[0], name = "initial_state")
         init_particle_weights = tf.keras.Input(dtype = tf.float32, shape = init_particle_state_shape[1:-1], batch_size= init_particle_state_shape[0], name = "initial_weight")
         prev_window = tf.keras.Input(dtype = tf.float32, shape = prev_window_shape[1:], batch_size= prev_window_shape[0], name = "prev_window")
@@ -254,7 +266,7 @@ class PFNET(object):
         rnn = tf.keras.layers.RNN(cell = cell_func, time_major=False, return_sequences=True, return_state=True)
         (particle_states, particle_weights), states_out, weights = rnn(inputs = (obs_in,prev_window), initial_state = state)
         # self.print_state_op = (particle_states, particle_weights)
-        self.print_state_op = (particle_states, particle_weights)
+        self.print_state_op = (particle_states, particle_weights, states_out, weights)
         state = [states_out,weights]
 
         with tf.control_dependencies([particle_states, particle_weights]):
@@ -263,14 +275,13 @@ class PFNET(object):
             
         return particle_states, particle_weights
     
-    def build_loss_op(self, p_states, p_weights, true_state_shape):
-        lin_weights = tf.nn.softmax(p_weights, axis=-1)
+    def build_loss_op(self, p_states, p_weights, obs):
+        # change this to make loss between current state and next input
+        # lin_weights = tf.nn.softmax(p_weights, axis=-1)
 
-        true_pos = tf.keras.Input(dtype = tf.float32, shape = true_state_shape[1:], batch_size= true_state_shape[0], name = "y")
-        self.inputs.append(true_pos)
-
-        mean_pos = tf.reduce_sum(tf.multiply(p_states[:,:,:,:1], lin_weights[:,:,:,None]), axis = 2)
-        pos_diffs = true_pos - mean_pos
+        # mean_pos = tf.reduce_sum(tf.multiply(p_states[:,:,:,:1], lin_weights[:,:,:,None]), axis = 2)
+        mean_pos = tf.reduce_mean(p_states[:,:,:,0], axis = 2)
+        pos_diffs = mean_pos - obs
         
         loss_pred = tf.reduce_mean(tf.square(pos_diffs), name='prediction_loss')
 
@@ -283,7 +294,7 @@ class PFNET(object):
         return loss_total
     
     def build_train_op(self):
-        self.global_step_op = tf.Variable(initial_value = 0.0, shape = (), trainable=False, name = "global_step")
+        self.global_step_op = tf.Variable(initial_value = 1.0, shape = (), trainable=False, name = "global_step")
         self.learning_rate_op = tf.compat.v1.train.exponential_decay(
             self.params['learningrate'], self.global_step_op, decay_steps=1, decay_rate=self.params['decayrate'],
             staircase=True, name="learning_rate")
