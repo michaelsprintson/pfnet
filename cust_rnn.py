@@ -97,13 +97,13 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
         lik = self.observation_model(particle_states, observation, prev_window) # additional inputs can be passed in here
         # particle_weights_o = particle_weights + lik  # unnormalized
         # particle_weights += lik  # unnormalized
-        outputs = particle_states, lik
         
-        particle_states, particle_weights = self.resample(
+        particle_states_new, particle_weights, to = self.resample(
                 particle_states, lik, alpha=self.params['alpha_resample_ratio'])
         
+        outputs = particle_states, lik, to
 
-        particle_states = self.transition_model(particle_states) # or here
+        particle_states = self.transition_model(particle_states_new) # or here
 
         state = particle_states, particle_weights
 
@@ -176,40 +176,29 @@ class PFRNNCell(tf.compat.v1.nn.rnn_cell.RNNCell):
         assert 0.0 < alpha <= 1.0
         batch_size, num_particles = particle_states.get_shape().as_list()[:2]
 
-        # normalize
-        particle_weights = particle_weights - tf.math.reduce_logsumexp(particle_weights, axis=-1, keepdims=True)
+        #take exp of every wegiht, bias by alpha
+        bias_prob = alpha * tf.exp(particle_weights) + (1 - alpha) * 1 / num_particles #(b,n)
 
-        uniform_weights = tf.constant(-np.log(num_particles), shape=(batch_size, num_particles), dtype=tf.float32)
+        indices = tf.cast(tf.random.categorical(bias_prob, num_particles), tf.int32) #(b,n)
 
-        # build sampling distribution, q(s), and update particle weights
-        if alpha < 1.0:
-            # soft resampling
-            q_weights = tf.stack([particle_weights + np.log(alpha), uniform_weights + np.log(1.0-alpha)], axis=-1)
-            q_weights = tf.math.reduce_logsumexp(q_weights, axis=-1, keepdims=False)
-            q_weights = q_weights - tf.math.reduce_logsumexp(q_weights, axis=-1, keepdims=True)  # normalized
-
-            particle_weights = particle_weights - q_weights  # this is unnormalized
-        else:
-            # hard resampling. this will produce zero gradients
-            q_weights = particle_weights
-            particle_weights = uniform_weights
-
-        # sample particle indices according to q(s)
-        indices = tf.cast(tf.compat.v1.multinomial(q_weights, num_particles), tf.int32)  # shape: (batch_size, num_particles)
-        # indices = tf.cast(tfp.distributions.Multinomial(num_particles, logits=q_weights).sample(()), tf.int32)  # shape: (batch_size, num_particles)
-
-        # index into particles
         helper = tf.range(0, batch_size*num_particles, delta=num_particles, dtype=tf.int32)  # (batch, )
         indices = indices + tf.expand_dims(helper, axis=1)
 
         particle_states = tf.reshape(particle_states, (batch_size * num_particles, 3))
         particle_states = tf.gather(particle_states, indices=indices, axis=0)  # (batch_size, num_particles, 3)
 
-        particle_weights = tf.reshape(particle_weights, (batch_size * num_particles, ))
-        particle_weights = tf.gather(particle_weights, indices=indices, axis=0)  # (batch_size, num_particles,)
-        # particle_weights = tf.fill((batch_size,num_particles,), np.float32(np.log(1.0/float(100))))
+        new_particle_weights = tf.reshape(particle_weights, (batch_size * num_particles, ))
+        new_particle_weights = tf.gather(new_particle_weights, indices=indices, axis=0)  # (batch_size, num_particles,)
 
-        return particle_states, particle_weights
+        bias_particle_weights = tf.exp(new_particle_weights) #(b,n)
+        bias_matrix = alpha * bias_particle_weights + (1 - alpha) * 1 / num_particles #(b,n)
+        biased_weights = tf.math.log(bias_particle_weights / bias_matrix)
+
+        particle_weights = biased_weights - tf.reduce_logsumexp(biased_weights, axis=1, keepdims=True)
+
+        return particle_states, particle_weights, bias_prob
+
+
     
 class PFNET(object):
     def __init__(self, params, input_shapes, labels_shapes, is_training = True):
@@ -264,9 +253,9 @@ class PFNET(object):
                                 num_particles=num_particles)
         
         rnn = tf.keras.layers.RNN(cell = cell_func, time_major=False, return_sequences=True, return_state=True)
-        (particle_states, particle_weights), states_out, weights = rnn(inputs = (obs_in,prev_window), initial_state = state)
+        (particle_states, particle_weights, tos), states_out, weights = rnn(inputs = (obs_in,prev_window), initial_state = state)
         # self.print_state_op = (particle_states, particle_weights)
-        self.print_state_op = (particle_states, particle_weights, states_out, weights)
+        self.print_state_op = (particle_states, particle_weights, states_out, weights, tos)
         state = [states_out,weights]
 
         with tf.control_dependencies([particle_states, particle_weights]):

@@ -23,7 +23,7 @@ class ref_pf():
         positions = (np.arange(N) + np.random.random()) / N
 
         indexes = np.zeros(N, 'i')
-        cumulative_sum = np.cumsum(weights)
+        cumulative_sum = np.cumsum(weights / sum(weights))
         i, j = 0, 0
         while i < N:
             if positions[i] < cumulative_sum[j]:
