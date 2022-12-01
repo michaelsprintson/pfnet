@@ -172,6 +172,7 @@ class Localizer(nn.Module):
     def step(self, map_in, obs_in, act_in, gt_pos, args):
 
         pred, particle_pred = self.forward(map_in, obs_in, act_in)
+        print("particle_pred", particle_pred.shape)
 
         gt_xy_normalized = gt_pos[:, :, :2] / self.map_size
         gt_theta_normalized = gt_pos[:, :, 2:] / (np.pi * 2)
@@ -207,6 +208,8 @@ class Localizer(nn.Module):
 
         particle_pred = particle_pred.transpose(0, 1).contiguous()
         particle_gt = gt_normalized.repeat(self.num_particles, 1, 1)
+        print("particle_pred - transposed", particle_pred.shape)
+        print("particle_gt", particle_gt.shape)
         l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
         l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
 

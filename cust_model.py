@@ -74,15 +74,20 @@ class Tracker(nn.Module):
         pf_labels = self.hidden2label(hidden_states)
 
         y_out = torch.sigmoid(y)
-        pf_out = torch.sigmoid(pf_labels)
+        pf_out = torch.sigmoid(pf_labels) #TODO: investigate function of sigmoid, print y_out and y
         
         return y_out, pf_out
 
     def step(self, prev_window, gt_pos, args):
 
         pred, particle_pred = self.forward(prev_window)
+        pred = pred.squeeze(2)
+        particle_pred = particle_pred.squeeze(2)
+        
         #TODO:FIND LEN OF ABOVE 2
-        gt_normalized = gt_pos
+        gt_normalized = gt_pos.transpose(0,1).contiguous()
+        # print(pred.shape)
+        # print(gt_normalized.shape)
 
         batch_size = pred.size(1)
         sl = pred.size(0)
@@ -92,7 +97,7 @@ class Tracker(nn.Module):
         bpdecay_params = torch.FloatTensor(bpdecay_params)
         bpdecay_params = bpdecay_params.unsqueeze(0)
         bpdecay_params = bpdecay_params.unsqueeze(2)
-        pred = pred.transpose(0, 1).contiguous()
+        # pred = pred.transpose(0, 1).contiguous()
 
         l2_pred_loss = torch.nn.functional.mse_loss(pred, gt_normalized, reduction='none') * bpdecay_params
         l1_pred_loss = torch.nn.functional.l1_loss(pred, gt_normalized, reduction='none') * bpdecay_params
@@ -104,30 +109,32 @@ class Tracker(nn.Module):
 
         total_loss = pred_loss
 
-        particle_pred = particle_pred.transpose(0, 1).contiguous()
-        particle_gt = gt_normalized.repeat(self.num_particles, 1, 1)
-        l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
-        l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
+        # particle_pred = particle_pred.transpose(0, 1).contiguous()
+        # particle_gt = gt_normalized.transpose(0,1).repeat(self.num_particles, 1)
+        # print("particle_pred - transposed", particle_pred.shape)
+        # print("particle_gt", particle_gt.shape)
+        # l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
+        # l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
 
-        # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
-        # other more complicated distributions could be used to improve the performance
-        y_prob_l2 = torch.exp(-l2_particle_loss).view(self.num_particles, -1, sl)
-        l2_particle_loss = - y_prob_l2.mean(dim=0).log()
+        # # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
+        # # other more complicated distributions could be used to improve the performance
+        # y_prob_l2 = torch.exp(-l2_particle_loss).view(self.num_particles, -1, sl)
+        # l2_particle_loss = - y_prob_l2.mean(dim=0).log()
 
-        y_prob_l1 = torch.exp(-l1_particle_loss).view(self.num_particles, -1, sl)
-        l1_particle_loss = - y_prob_l1.mean(dim=0).log()
+        # y_prob_l1 = torch.exp(-l1_particle_loss).view(self.num_particles, -1, sl)
+        # l1_particle_loss = - y_prob_l1.mean(dim=0).log()
 
-        l2_particle_loss = torch.mean(l2_particle_loss)
-        l1_particle_loss = torch.mean(l1_particle_loss) #TODO: why mean mean instead of sum mean
+        # l2_particle_loss = torch.mean(l2_particle_loss)
+        # l1_particle_loss = torch.mean(l1_particle_loss) #TODO: why mean mean instead of sum mean
 
-        belief_loss = args.l2_weight * l2_particle_loss + args.l1_weight * l1_particle_loss
-        total_loss = total_loss + args.elbo_weight * belief_loss
+        # belief_loss = args.l2_weight * l2_particle_loss + args.l1_weight * l1_particle_loss
+        # total_loss = total_loss + args.elbo_weight * belief_loss
 
-        loss_last = torch.nn.functional.mse_loss(pred[:, -1], gt_pos[:, -1])
+        loss_last = torch.nn.functional.mse_loss(pred[:, -1], gt_normalized[:, -1])
 
-        particle_pred = particle_pred.view(self.num_particles, batch_size, sl)
+        # particle_pred = particle_pred.view(self.num_particles, batch_size, sl)
 
-        return total_loss, loss_last, particle_pred
+        return total_loss, loss_last, None
 
 class TrackingDataset(Dataset):
     def __init__(self, data, output):
