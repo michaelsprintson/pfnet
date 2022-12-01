@@ -129,6 +129,8 @@ class PFLSTMCell(PFRNNBaseCell):
         # print("wi", wi.shape)
         s = wh_b + wi #sums the neural layer of action and original state
         # print("s", s.shape)
+        # print("self.h_dim", self.h_dim)
+
 
         f, i, o, mu, var = torch.split(s, split_size_or_sections=self.h_dim,
                                        dim=1)
