@@ -114,6 +114,10 @@ class Localizer(nn.Module):
             return hidden.detach()
 
     def forward(self, map_in, obs_in, act_in):
+        print(obs_in.shape)
+        print(act_in.shape)
+        print(map_in.shape)
+
         emb_map = self.encode(map_in)
         batch_size = emb_map.size(0)
         emb_map = emb_map.view(batch_size, -1)

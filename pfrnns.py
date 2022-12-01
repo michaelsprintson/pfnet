@@ -113,17 +113,30 @@ class PFLSTMCell(PFRNNBaseCell):
         h0, c0, p0 = hx
         batch_size = h0.size(0)
         wh_b = self.fc_hh(h0)
+        # print("wh_b", wh_b.shape)
+        # print("input_", input_.shape)
+        # print("self.input_size", self.input_size)
+        # print("self.ext_obs", self.ext_obs)
 
         # by default assume input_ = (obs, control)
 
         obs = self.obs_extractor(input_)
+        # print("obs", obs.shape)
         act = self.act_extractor(input_)
+        # print("act", act.shape)
 
         wi = self.fc_ih(act)
+        # print("wi", wi.shape)
         s = wh_b + wi #sums the neural layer of action and original state
+        # print("s", s.shape)
 
         f, i, o, mu, var = torch.split(s, split_size_or_sections=self.h_dim,
                                        dim=1)
+        # print("f", f.shape)
+        # print("i", i.shape)
+        # print("o", o.shape)
+        # print("mu", mu.shape)
+        # print("var", var.shape)
         g_ = self.reparameterize(mu, var).view(
             self.num_particles, -1, self.h_dim).transpose(0, 1).contiguous()
         g = self.batch_norm(g_).transpose(

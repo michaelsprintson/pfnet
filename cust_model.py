@@ -12,18 +12,16 @@ class Tracker(nn.Module):
         self.batch_size = args.batch_size
         self.window_length = args.window_length
         self.hidden_dim = args.h
-        self.obs_emb = args.emb_obs
         self.act_emb = args.emb_act
         self.dropout_rate = args.dropout
-        total_emb = self.obs_emb + self.act_emb
         self.num_obs = args.obs_num
 
-        self.rnn = PFLSTMCell(self.num_particles, total_emb,
+        self.rnn = PFLSTMCell(self.num_particles, self.act_emb,
             self.hidden_dim, 32, 32, args.resamp_alpha)
 
         self.hidden2label = nn.Linear(self.hidden_dim, 1)
 
-        self.act_embedding = nn.Linear(args.window_length, self.act_emb)
+        self.act_embedding = nn.Linear(args.window_length*5, self.act_emb)
         self.hnn_dropout = nn.Dropout(self.dropout_rate)
 
         self.initialize = 'rand'
@@ -56,6 +54,7 @@ class Tracker(nn.Module):
         probs = []
 
         for step in range(seq_len):
+            # print(embedding[:, step, :].shape)
             hidden = self.rnn(embedding[:, step, :], hidden)
             hidden_states.append(hidden[0])
             probs.append(hidden[-1])
@@ -90,6 +89,7 @@ class Tracker(nn.Module):
         bpdecay_params = np.exp(args.bpdecay * np.arange(sl))
         bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
 
+        bpdecay_params = torch.FloatTensor(bpdecay_params)
         bpdecay_params = bpdecay_params.unsqueeze(0)
         bpdecay_params = bpdecay_params.unsqueeze(2)
         pred = pred.transpose(0, 1).contiguous()
