@@ -6,12 +6,11 @@ from model import Localizer
 from arguments import parse_args
 import os
 from torch.utils.tensorboard import SummaryWriter
-import logging
-import pickle
-import time
 
-if not os.path.isdir('eval'):
-    os.mkdir('eval')
+
+if not os.path.isdir('logs'):
+    os.mkdir('logs')
+
 
 def get_data_name(args, train):
     """
@@ -21,10 +20,8 @@ def get_data_name(args, train):
     :param train: train / eval
     :return: fname: the name of the file
     """
-    # number of trajs
     num_trajs = args.num_trajs
-    # number of trajs
-    traj_len = args.sl 
+    traj_len = args.sl
 
     mode = 'train' if train else 'eval'
 
@@ -33,7 +30,7 @@ def get_data_name(args, train):
 
 
 def get_logger():
-    root = './eval'
+    root = './logs'
     existings = os.listdir(root)
     cnt = str(len(existings))
     logger = SummaryWriter(os.path.join(root, cnt, 'tflogs'))
@@ -43,7 +40,7 @@ def get_logger():
 
 def save_args(args, run_id):
     ret = vars(args)
-    path = os.path.join('eval', run_id, 'args.conf')
+    path = os.path.join('logs', run_id, 'args.conf')
     import json
     with open(path, 'w') as fout:
         json.dump(ret, fout)
@@ -79,6 +76,7 @@ def get_data(args):
     """
     train_fname = get_data_name(args, True)
     eval_fname = get_data_name(args, False)
+    import pickle
 
     if not os.path.isdir('data'):
         os.mkdir('data')
@@ -106,44 +104,57 @@ def get_data(args):
     return train_data, eval_data
 
 
-def set_logging(cnt):
-    file_path = os.path.join("./eval", cnt, "particle_pred.log")
-    logging.basicConfig(filename=file_path, level=logging.DEBUG)
-
-
-def get_checkpoint(args):
-    try:
-        model_checkpoint = torch.load(os.path.join(os.getcwd(), 'logs', str(args.logs_num), 'models', 'model_best'))
-        optimizer_checkpoint = torch.load(os.path.join(os.getcwd(), 'logs', str(args.logs_num), 'models', 'optim_best'))
-    except:
-        print("\n[Error] Please make sure you have trained the model using main.py. ")
-        print("And set the correct model path. \n")
-    
-    return model_checkpoint, optimizer_checkpoint
-
-
-def evaluate(args, logger, run_id):
+def train(args, logger, run_id):
     model = get_model(args)
     optimizer = get_optim(args, model)
 
-    model_checkpoint, optimizer_checkpoint = get_checkpoint(args)
-    model.load_state_dict(model_checkpoint)
-    optimizer.load_state_dict(optimizer_checkpoint)
-    model.eval()
-
+    print("going to get data")
     train_data, eval_data = get_data(args)
+    train_dataset = LocalizationDataset(train_data)
     eval_dataset = LocalizationDataset(eval_data)
 
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+                              num_workers=8, pin_memory=True, shuffle=True)
     eval_loader = DataLoader(eval_dataset, batch_size=args.batch_size,
                              num_workers=8, pin_memory=True, shuffle=False)
 
-    from timer import Timer
-    infer_timer = Timer("Inference")
+    os.mkdir(os.path.join('logs', run_id, 'models'))
 
     cnt = 0
+    best_eval = 1000
     from tqdm import tqdm
 
-    for epoch in tqdm(range(args.epochs)):
+    print("starting epochs")
+    for epoch in range(1):
+        model.train()
+
+        for iteration, data in tqdm(enumerate(train_loader)):
+            # print("in iteration")
+            cnt = cnt + 1
+
+            env_map, obs, pos, action = data
+
+            if torch.cuda.is_available() and args.gpu:
+                env_map = env_map.to('cuda')
+                obs = obs.to('cuda')
+                pos = pos.to('cuda')
+                action = action.to('cuda')
+
+            model.zero_grad()
+            loss, log_loss, particle_pred = model.step(
+                env_map, obs, action, pos, args)
+            loss.backward()
+            if args.clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+            optimizer.step()
+
+            if iteration % 50:
+                loss_last = log_loss.to('cpu').detach().numpy()
+                loss_all = loss.to('cpu').detach().numpy()
+
+                logger.add_scalar('train/loss_last', loss_last, cnt)
+                logger.add_scalar('train/loss', loss_all, cnt)
+
         model.eval()
         eval_loss_all = []
         eval_loss_last = []
@@ -158,10 +169,8 @@ def evaluate(args, logger, run_id):
                     action = action.to('cuda')
 
                 model.zero_grad()
-                infer_timer.start() # start the timer
                 loss, log_loss, particle_pred = model.step(
                     env_map, obs, action, pos, args)
-                infer_timer.stop() # pause the timer
 
                 eval_loss_all.append(loss.to('cpu').detach().numpy())
                 eval_loss_last.append(log_loss.to('cpu').detach().numpy())
@@ -171,23 +180,22 @@ def evaluate(args, logger, run_id):
         logger.add_scalar('eval/loss_last', log_eval_last, cnt)
         logger.add_scalar('eval/loss', log_eval_all, cnt)
 
-        logging.info(particle_pred.size())
-        logging.info("time elapse average %f" % (infer_timer.average))
-        logging.info("time elapse total %f" % (infer_timer.total))
-        logging.info("time elapses " + str(infer_timer.time_log))
-        logging.info("================ seperate line =================")
+        if log_eval_last < best_eval:
+            best_eval = log_eval_last
+            torch.save(model.state_dict(), os.path.join(
+                'logs', run_id, 'models', 'model_best'))
+            torch.save(optimizer.state_dict(), os.path.join(
+                'logs', run_id, 'models', 'optim_best'))
 
-        #### save particle_pred tensor for plot_particle.py ####
-        fname = os.path.join('eval', run_id, 'particle_pred')
-        torch.save(particle_pred, fname)
+    torch.save(model.state_dict(), os.path.join(
+        'logs', run_id, 'models', 'model_final'))
+    torch.save(optimizer.state_dict(), os.path.join(
+        'logs', run_id, 'models', 'optim_final'))
 
-        cnt += 1
 
 
 if __name__ == "__main__":
     args = parse_args()
-    loggers, run_id = get_logger()
+    logger, run_id = get_logger()
     save_args(args, run_id)
-    set_logging(run_id)
-    evaluate(args, loggers, run_id)
-
+    train(args, logger, run_id)

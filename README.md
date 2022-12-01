@@ -1,77 +1,46 @@
-# Particle Filter Networks
+# PF-RNNs
 
-Tensorflow implementation of Particle Filter Networks (PF-net)
+This is the PyTorch implementation of Particle Filter Recurrent Neural Networks (PF-RNNs).
 
-Peter Karkus, David Hsu, and Wee Sun Lee:  Particle filter networks with application to visual localization.
-Conference on Robot Learning (CoRL), 2018. https://arxiv.org/abs/1805.08975
+Xiao Ma, Peter Karkus, David Hsu, Wee Sun Lee: [Particle Filter Recurrent Neural Networks. AAAI Conference on Artificial Intelligence (AAAI), 2020. ](https://arxiv.org/abs/1905.12885)
 
-### PF-net architecture
-<img src="figs/architecture.png" width="553" height="200"/><br>
-PF-net encodes both a learned probabilistic system model and the particle filter algorithm in a single neural network
+## Network structure
 
-### Localization example
-<img src="figs/trajectory.jpg" width="600" height="207"/><br>
-Example for successful global localization
+<img src="imgs/networks.jpg"/>
 
+Above is the network structures for PF-LSTM and PF-GRU. In PF-RNNs, we maintain a set of latent particles and update them using particle filter algorithm. In our implementation, PF-LSTM and PF-GRU update particles in a parallel manner which benefit from the GPU acceleration.
 
-### Requirements
-
-Python 2.7, Tensorflow 1.5.0
-
-Additional packages can be installed with
+## Install requirements
 ```
 pip install -r requirements.txt
 ```
 
-### Dataset
-
-Datasets for localization experiments are available at
-https://drive.google.com/open?id=1hSDRg7tEf2O1D_NIL8OmVdHLN2KqYFF7
-
-The folder contains data for training,  validation and testing, in
-tfrecords format. Download to the ./data/ folder.
-
-A simple script is available to visualize the data:
+## Run the code
+The training parameters are specified in configs/train.conf. To run the robot localization experiment, use
 ```
-python display_data.py ./data/valid.tfrecords
+python main.py -c ./configs/train.conf
 ```
 
-
-### Training
-
-The ```./configs/``` folder contains default configuration files for training and evaluation.
-Training requires the datesets to be downloaded into the ./data/ folder.
-Note that training requires significant resources, and it may take several hours or days depending on the hardware.
-
-PF-net can be trained with the default configuration using the following command:
+## Visualize particles
+After training, you could visualize the particles by
 ```
-python train.py -c ./configs/train.conf --obsmode rgb
+python evaluate.py -c ./configs/eval.conf # save the latent particle tensors
+python plot_particle.py --traj_num 0 --eval_num 0 # plot particles
 ```
 
-By default, logs will be saved in a new folder under ./logs/.
-For help on the input arguments run
-```
-python train.py -h
-```
+## Acknowledgement
+Thanks [Ta-Wei Yeh](https://github.com/TaWeiYeh) for inplementing the particle visualization code.
 
-
-
-### Evaluation
-
-A pre-trained model for RGB input is available under ./data/rgb_model_trained.chk. For evaluating a trained model run
+## Cite PF-RNNs
+If you find this work useful, please consider citing us
 ```
-python evaluate.py -c ./configs/eval-tracking.conf --load ./data/rgb_model_trained.chk
+@inproceedings{ma2020particle,
+  author    = {Xiao Ma and
+               P{\'{e}}ter Karkus and
+               David Hsu and
+               Wee Sun Lee},
+  title     = {Particle Filter Recurrent Neural Networks},
+  booktitle = {The Thirty-Fourth {AAAI} Conference on Artificial Intelligence, {AAAI}, 2020},
+  pages     = {5101--5108}
+}
 ```
-for the tracking task, and
-```
-python evaluate.py -c ./configs/eval-localization.conf --load ./data/rgb_model_trained.chk
-```
-for semi-global localization.
-The input arguments are the same as for train.py.
-Results will be somewhat different from the ones in
-the paper, because the initial uncertainty on the test trajectories
-uses a different random seed.
-
-### Contact
-
-Peter Karkus <karkus (at) comp.nus.edu.sg>
