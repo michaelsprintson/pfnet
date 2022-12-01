@@ -1,7 +1,8 @@
 import torch.nn as nn
 import torch
-from pfrnns import PFLSTMCell, PFGRUCell
+from pfrnns import PFLSTMCell
 import numpy as np
+from torch.utils.data.dataset import Dataset
 
 class Tracker(nn.Module):
 
@@ -22,7 +23,6 @@ class Tracker(nn.Module):
 
         self.hidden2label = nn.Linear(self.hidden_dim, 1)
 
-        self.obs_embedding = nn.Linear(self.num_obs, self.obs_emb)
         self.act_embedding = nn.Linear(args.window_length, self.act_emb)
         self.hnn_dropout = nn.Dropout(self.dropout_rate)
 
@@ -43,12 +43,9 @@ class Tracker(nn.Module):
     def detach_hidden(self, hidden):
         return tuple([h.detach() for h in hidden])
         
-    def forward(self, obs_in, prev_window):
+    def forward(self, prev_window):
         
-        obs_input = torch.relu(self.obs_embedding(obs_in))
-        act_input = torch.relu(self.act_embedding(prev_window))
-
-        embedding = torch.cat((obs_input, act_input), dim=2)
+        embedding = torch.relu(self.act_embedding(prev_window))
 
         # repeat the input if using the PF-RNN
         embedding = embedding.repeat(self.num_particles, 1, 1)
@@ -82,9 +79,9 @@ class Tracker(nn.Module):
         
         return y_out, pf_out
 
-    def step(self, obs_in, prev_window, gt_pos, args):
+    def step(self, prev_window, gt_pos, args):
 
-        pred, particle_pred = self.forward(obs_in, prev_window)
+        pred, particle_pred = self.forward(prev_window)
         #TODO:FIND LEN OF ABOVE 2
         gt_normalized = gt_pos
 
@@ -131,3 +128,34 @@ class Tracker(nn.Module):
         particle_pred = particle_pred.view(self.num_particles, batch_size, sl)
 
         return total_loss, loss_last, particle_pred
+
+class TrackingDataset(Dataset):
+    def __init__(self, data, output):
+        self.data = data
+        self.outputs = output
+        self.seq_len = len(self.data[0])
+        self.seq_num = len(self.data)
+
+        self.samp_seq_len = None
+
+    def __len__(self):
+        return self.seq_num
+
+    def set_samp_seq_len(self, seq_len):
+        self.samp_seq_len = seq_len
+
+    def __getitem__(self, index):
+        seq_idx = index % self.seq_num
+
+        output = self.outputs[seq_idx]
+        window = self.data[seq_idx]
+
+        output = torch.FloatTensor(output)
+        window = torch.FloatTensor(window)
+
+        if self.samp_seq_len is not None and self.samp_seq_len != self.seq_len:
+            start = np.random.randint(0, self.seq_len - self.samp_seq_len + 1)
+            output = output[start:start + self.samp_seq_len]
+            window = window[start:start + self.samp_seq_len]
+
+        return (output, window)
