@@ -4,20 +4,18 @@ from pfrnns import PFLSTMCell
 import numpy as np
 from torch.utils.data.dataset import Dataset
 
-class Tracker(nn.Module):
+class SimpleRNN(nn.Module):
 
     def __init__(self, args):
-        super(Tracker, self).__init__()
-        self.num_particles = args.num_particles
+        super(SimpleRNN, self).__init__()
         self.batch_size = args.batch_size
         self.window_length = args.window_length
         self.hidden_dim = args.h
         self.act_emb = args.emb_act
         self.dropout_rate = args.dropout
         self.num_obs = args.obs_num
-
-        self.rnn = PFLSTMCell(self.num_particles, self.act_emb,
-            self.hidden_dim, 32, 32, args.resamp_alpha)
+ 
+        self.rnn = nn.LSTM(self.act_emb, self.hidden_dim, batch_first = True) #might possibly have to do batch first True
 
         self.hidden2label = nn.Linear(self.hidden_dim, 1)
 
@@ -31,10 +29,9 @@ class Tracker(nn.Module):
     def init_hidden(self, batch_size):
         initializer = torch.rand if self.initialize == 'rand' else torch.zeros
 
-        h0 = initializer(batch_size * self.num_particles, self.hidden_dim)
-        c0 = initializer(batch_size * self.num_particles, self.hidden_dim)
-        p0 = torch.ones(batch_size * self.num_particles, 1) * np.log(1 / self.num_particles)
-        hidden = (h0, c0, p0)
+        h0 = initializer(1, batch_size, self.hidden_dim)
+        c0 = initializer(1, batch_size, self.hidden_dim)
+        hidden = (h0, c0)
 
         return hidden
 
@@ -46,32 +43,29 @@ class Tracker(nn.Module):
         embedding = torch.relu(self.act_embedding(prev_window))
 
         # repeat the input if using the PF-RNN
-        embedding = embedding.repeat(self.num_particles, 1, 1)
         seq_len = embedding.size(1)
         hidden = self.init_hidden(self.args.batch_size)
 
         hidden_states = []
-        probs = []
 
-        for step in range(seq_len):
+        # for step in range(seq_len):
             # print(embedding[:, step, :].shape)
-            hidden = self.rnn(embedding[:, step, :], hidden)
-            hidden_states.append(hidden[0])
-            probs.append(hidden[-1])
+        # print(type(embedding), embedding.shape)
+        # print(type(hidden), hidden[0].shape, hidden[1].shape)
+        out, (hidden, memory) = self.rnn(embedding, hidden)
+            # hidden_states.append(hidden[0])
 
             # if step % self.bp_length == 0:
             #     hidden = self.detach_hidden(hidden)
 
-        hidden_states = torch.stack(hidden_states, dim=0)
-        hidden_states = self.hnn_dropout(hidden_states)
-
-        probs = torch.stack(probs, dim=0)
-        prob_reshape = probs.view([seq_len, self.num_particles, -1, 1])
-        out_reshape = hidden_states.view([seq_len, self.num_particles, -1, self.hidden_dim])
-        y = out_reshape * torch.exp(prob_reshape)
-        y = torch.sum(y, dim=1)
-        y = self.hidden2label(y)
-        pf_labels = self.hidden2label(hidden_states)
+        # hidden_states = torch.stack(hidden_states, dim=0)
+        # hidden_states = self.hnn_dropout(hidden_states)
+        print("hidden.shape", hidden.shape)
+        # out_reshape = hidden_states.view([seq_len, -1, self.hidden_dim])
+        # y = torch.sum(y, dim=1)
+        y = self.hidden2label(hidden)
+        print("y.shape", y.shape)
+        # pf_labels = self.hidden2label(hidden_states)
 
         y_out = torch.sigmoid(y)
         # pf_out = torch.sigmoid(pf_labels) #TODO: investigate function of sigmoid, print y_out and y
@@ -82,11 +76,14 @@ class Tracker(nn.Module):
 
         # pred, particle_pred = self.forward(prev_window)
         pred = self.forward(prev_window)
+        print("pred.shape", pred.shape)
         pred = pred.squeeze(2)
+        print("pred.shape", pred.shape)
         # particle_pred = particle_pred.squeeze(2)
         
         #TODO:FIND LEN OF ABOVE 2
         gt_normalized = gt_pos.transpose(0,1).contiguous()
+        print("gt_normalized.shape", gt_normalized.shape)
         # print(pred.shape)
         # print(gt_normalized.shape)
 

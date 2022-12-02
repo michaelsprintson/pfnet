@@ -2,6 +2,7 @@
 *.o
 .idea/
 pfrnnenv/*
+playground.ipynb
 
 # Windows image file caches
 Thumbs.db
