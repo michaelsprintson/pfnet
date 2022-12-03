@@ -48,23 +48,22 @@ class SimpleRNN(nn.Module):
 
         hidden_states = []
 
-        # for step in range(seq_len):
-            # print(embedding[:, step, :].shape)
-        # print(type(embedding), embedding.shape)
-        # print(type(hidden), hidden[0].shape, hidden[1].shape)
-        out, (hidden, memory) = self.rnn(embedding, hidden)
-            # hidden_states.append(hidden[0])
+        for step in range(seq_len):
+            e = embedding[:, step, :].unsqueeze(1)
+            # print(e.shape)
+            # print(type(hidden), hidden[0].shape, hidden[1].shape)
+            
+            out, hidden= self.rnn(e, hidden)
+            hidden_states.append(hidden[0])
 
             # if step % self.bp_length == 0:
             #     hidden = self.detach_hidden(hidden)
 
-        # hidden_states = torch.stack(hidden_states, dim=0)
-        # hidden_states = self.hnn_dropout(hidden_states)
-        print("hidden.shape", hidden.shape)
+        hidden_states = torch.stack(hidden_states, dim=0).squeeze(1)
+        hidden_states = self.hnn_dropout(hidden_states)
         # out_reshape = hidden_states.view([seq_len, -1, self.hidden_dim])
         # y = torch.sum(y, dim=1)
-        y = self.hidden2label(hidden)
-        print("y.shape", y.shape)
+        y = self.hidden2label(hidden_states)
         # pf_labels = self.hidden2label(hidden_states)
 
         y_out = torch.sigmoid(y)
@@ -76,14 +75,11 @@ class SimpleRNN(nn.Module):
 
         # pred, particle_pred = self.forward(prev_window)
         pred = self.forward(prev_window)
-        print("pred.shape", pred.shape)
         pred = pred.squeeze(2)
-        print("pred.shape", pred.shape)
         # particle_pred = particle_pred.squeeze(2)
         
         #TODO:FIND LEN OF ABOVE 2
         gt_normalized = gt_pos.transpose(0,1).contiguous()
-        print("gt_normalized.shape", gt_normalized.shape)
         # print(pred.shape)
         # print(gt_normalized.shape)
 
