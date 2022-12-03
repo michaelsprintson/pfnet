@@ -4,15 +4,24 @@ import numpy as np
 def split_trajs(npdata, sl, win_len):
 
     #### Build the outputs/labels
-    # Sigmoid boolean
     percent_close = .001 #difference of (+- percent_close * close) will map to +- .88 in sigmoid
-    output = np.array([npdata[i]-npdata[i-1] for i in range(win_len+1, len(npdata))])[:,1]
-    scale = 2 / (percent_close * np.array([npdata[i-1] for i in range(win_len+1, len(npdata))])[:,1])
-    output = 1 / (1 + np.exp(-1*output*scale)) #sigmoid function. Scaled to put 88% at threshold eps
-    #output = [ for i in len(output_price)]
+    
+    # Sigmoid boolean
+    #output = np.array([npdata[i]-npdata[i-1] for i in range(win_len+1, len(npdata))])[:,1]
+    #scale = 2 / (percent_close * np.array([npdata[i-1] for i in range(win_len+1, len(npdata))])[:,1])
+    #output = 1 / (1 + np.exp(-1*output*scale)) #sigmoid function. Scaled to put 88% at threshold eps
+
+    # Scalar boolean
+    #output = np.array([1 if (npdata[i] - npdata[i-1] > 0) else 0 for i in range(win_len+1, len(npdata))])[:,1]
+
+    # Vector boolean
+    #output = np.array([np.array([1, 0]) if (npdata[i] - npdata[i-1] > 0) else np.array[0, 1] for i in range(win_len+1, len(npdata))])[:,1]
+    
+    # Vector tri-boolean
+    #output = np.array([np.array([1, 0, 0]) if (npdata[i] > (1+percent_close)*npdata[i-1]) else np.array([0, 0, 1]) if (npdata[i]-npdata[i-1] < -1*percent_close*npdata[i-1]) else np.array([0, 1, 0]) for i in range(win_len+1, len(npdata))])[:,1]
 
     # Close differential
-    # output = np.array([npdata[i]-npdata[i-1] for i in range(win_len+1, len(npdata))])[:,1]
+    output = np.array([npdata[i]-npdata[i-1] for i in range(win_len+1, len(npdata))])[:,1]
     
     # Close price
     # output = np.array([npdata[i] for i in range(win_len, len(npdata))])[:,1]
@@ -55,4 +64,3 @@ def grab_amazon_data(filename = "AMZN_2022.csv", sl = 96, win_len = 6):
     print(1)
 
     return input_windowed, output_windowed
-
