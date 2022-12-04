@@ -48,7 +48,7 @@ def split_trajs(npdata, sl, win_len):
         return npdata_filt.reshape(3,sl,5 * win_len), output_filt.reshape(3,sl)'''
 
 
-def grab_amazon_data(filename = "AMZN_2022.csv", sl = 96, win_len = 6):
+def grab_amazon_data(filename = "data/AMZN_2022.csv", sl = 96, win_len = 6):
     amzn_data = pd.read_csv(filename).set_index("DateTime").drop('Unnamed: 0', axis = 1, inplace = False).drop_duplicates()
     date_index = [datetime.strptime(i, "%Y-%m-%d %H:%M:%S") for i in list(amzn_data.index)]
     amzn_data.index = date_index

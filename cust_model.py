@@ -74,14 +74,14 @@ class Tracker(nn.Module):
         pf_labels = self.hidden2label(hidden_states)
 
         y_out = torch.sigmoid(y)
-        # pf_out = torch.sigmoid(pf_labels) #TODO: investigate function of sigmoid, print y_out and y
+        pf_out = torch.sigmoid(pf_labels) #TODO: investigate function of sigmoid, print y_out and y
         
-        return y_out#, pf_out
+        return y_out, pf_out
 
     def step(self, prev_window, gt_pos, args):
 
         # pred, particle_pred = self.forward(prev_window)
-        pred = self.forward(prev_window)
+        pred, pf_out = self.forward(prev_window)
         pred = pred.squeeze(2)
         # particle_pred = particle_pred.squeeze(2)
         
@@ -135,7 +135,7 @@ class Tracker(nn.Module):
 
         # particle_pred = particle_pred.view(self.num_particles, batch_size, sl)
 
-        return total_loss, loss_last, None
+        return total_loss, loss_last, pf_out
 
 class TrackingDataset(Dataset):
     def __init__(self, data, output):
