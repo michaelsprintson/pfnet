@@ -32,7 +32,7 @@ def run_model(model, optimizer, train_loader, test_loader, args, epoch_num = 10,
 
             loss_last = log_loss.to('cpu').detach().numpy()
             loss_all = loss.to('cpu').detach().numpy()
-            per_e_loss.append([loss_last, loss_all])
+            per_e_loss.append([loss_all, loss_last])
         losses.append(per_e_loss)
         
         if run_eval:
