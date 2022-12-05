@@ -1,4 +1,4 @@
-PFLSTM MLSP PROJECT README
+PFLSTM MLSP PROJECT
 
 Citations:
 Jonschkowski, R., Rastogi, D., &amp; Brock, O. (2018). Differentiable Particle Filters: End-to-end learning with algorithmic priors. Robotics: Science and Systems XIV. https://doi.org/10.15607/rss.2018.xiv.001 
