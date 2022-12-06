@@ -5,8 +5,13 @@ import numpy as np
 from torch.utils.data.dataset import Dataset
 
 class SimpleRNN(nn.Module):
-
+    """
+    Implements RNN structure for given batch and arguments
+    """
     def __init__(self, args):
+        """
+        Initialize RNN with input arguments and start the LSTM cell
+        """
         super(SimpleRNN, self).__init__()
         self.batch_size = args.batch_size
         self.window_length = args.window_length
@@ -27,6 +32,9 @@ class SimpleRNN(nn.Module):
         self.bp_length = args.bp_length
 
     def init_hidden(self, batch_size):
+        """
+        Initialize hidden states for the LSTM
+        """
         initializer = torch.rand if self.initialize == 'rand' else torch.zeros
 
         h0 = initializer(1, batch_size, self.hidden_dim)
@@ -34,12 +42,13 @@ class SimpleRNN(nn.Module):
         hidden = (h0, c0)
 
         return hidden
-
-    def detach_hidden(self, hidden):
-        return tuple([h.detach() for h in hidden])
         
     def forward(self, prev_window):
-        
+        """
+        Implements hidden state update given a particular batch of inputs with some given sequence length.
+
+        Returns estimates over the esquence length.
+        """
         embedding = torch.relu(self.act_embedding(prev_window))
 
         # repeat the input if using the PF-RNN
@@ -50,28 +59,24 @@ class SimpleRNN(nn.Module):
 
         for step in range(seq_len):
             e = embedding[:, step, :].unsqueeze(1)
-            # print(e.shape)
-            # print(type(hidden), hidden[0].shape, hidden[1].shape)
-            
+
             out, hidden= self.rnn(e, hidden)
             hidden_states.append(hidden[0])
 
-            # if step % self.bp_length == 0:
-            #     hidden = self.detach_hidden(hidden)
-
         hidden_states = torch.stack(hidden_states, dim=0).squeeze(1)
         hidden_states = self.hnn_dropout(hidden_states)
-        # out_reshape = hidden_states.view([seq_len, -1, self.hidden_dim])
-        # y = torch.sum(y, dim=1)
         y = self.hidden2label(hidden_states)
-        # pf_labels = self.hidden2label(hidden_states)
 
         y_out = torch.sigmoid(y)
-        # pf_out = torch.sigmoid(pf_labels) #TODO: investigate function of sigmoid, print y_out and y
         
-        return y_out#, pf_out
+        return y_out
 
     def step(self, prev_window, gt_pos, args):
+        """
+        Implements one training step of the RNN, given a batched input, batched output, and parameters
+
+        Returns loss tensor based on difference between prediction and input
+        """
 
         # pred, particle_pred = self.forward(prev_window)
         pred = self.forward(prev_window)
@@ -103,60 +108,6 @@ class SimpleRNN(nn.Module):
 
         total_loss = pred_loss
 
-        # particle_pred = particle_pred.transpose(0, 1).contiguous()
-        # particle_gt = gt_normalized.transpose(0,1).repeat(self.num_particles, 1)
-        # print("particle_pred - transposed", particle_pred.shape)
-        # print("particle_gt", particle_gt.shape)
-        # l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
-        # l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
-
-        # # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
-        # # other more complicated distributions could be used to improve the performance
-        # y_prob_l2 = torch.exp(-l2_particle_loss).view(self.num_particles, -1, sl)
-        # l2_particle_loss = - y_prob_l2.mean(dim=0).log()
-
-        # y_prob_l1 = torch.exp(-l1_particle_loss).view(self.num_particles, -1, sl)
-        # l1_particle_loss = - y_prob_l1.mean(dim=0).log()
-
-        # l2_particle_loss = torch.mean(l2_particle_loss)
-        # l1_particle_loss = torch.mean(l1_particle_loss) #TODO: why mean mean instead of sum mean
-
-        # belief_loss = args.l2_weight * l2_particle_loss + args.l1_weight * l1_particle_loss
-        # total_loss = total_loss + args.elbo_weight * belief_loss
-
         loss_last = torch.nn.functional.mse_loss(pred[:, -1], gt_normalized[:, -1])
 
-        # particle_pred = particle_pred.view(self.num_particles, batch_size, sl)
-
         return total_loss, loss_last, None
-
-class TrackingDataset(Dataset):
-    def __init__(self, data, output):
-        self.data = data
-        self.outputs = output
-        self.seq_len = len(self.data[0])
-        self.seq_num = len(self.data)
-
-        self.samp_seq_len = None
-
-    def __len__(self):
-        return self.seq_num
-
-    def set_samp_seq_len(self, seq_len):
-        self.samp_seq_len = seq_len
-
-    def __getitem__(self, index):
-        seq_idx = index % self.seq_num
-
-        output = self.outputs[seq_idx]
-        window = self.data[seq_idx]
-
-        output = torch.FloatTensor(output)
-        window = torch.FloatTensor(window)
-
-        if self.samp_seq_len is not None and self.samp_seq_len != self.seq_len:
-            start = np.random.randint(0, self.seq_len - self.samp_seq_len + 1)
-            output = output[start:start + self.samp_seq_len]
-            window = window[start:start + self.samp_seq_len]
-
-        return (output, window)
